@@ -59,7 +59,7 @@ jobs:
     - name: Set workspace environment
       shell: sh
       run: |
-        echo "::set-env name=QT_CPP_SENTRY_VERSION::20.10.0.$((${{ github.run_number }}))"
+        echo "::set-env name=QT_CPP_SENTRY_VERSION::20.10.0.${{ github.run_number }}"
 
     - name: Install curl
       if: ${{ matrix.config.os == 'ubuntu' }} 
@@ -100,23 +100,40 @@ jobs:
       run: |
         cmake --build build
 
-    - name: Setup Sentry CLI
-      uses: mathrix-education/setup-sentry-cli@0.1.0
+    - uses: actions/upload-artifact@v2
       with:
-        token: ${{ secrets.SENTRY_TOKEN }}
-        organization: anton-filimonov
-        project: qt_cpp_sentry
+        name: build-${{ matrix.config.os }}-${{ matrix.config.arch }}
+        path: './build/output/*'
 
-    - name: Create Sentry release
-      shell: sh
-      run: |
-        sentry-cli releases new $QT_CPP_SENTRY_VERSION
-        sentry-cli releases set-commits --auto $QT_CPP_SENTRY_VERSION
+  sentry_release:
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Set workspace environment
+        shell: sh
+        run: |
+          echo "::set-env name=KLOGG_VERSION::20.9.0.${{ github.run_number }}"
 
-    - name: Upload symbols
-      shell: sh
-      run: |
-        sentry-cli upload-dif ./build/output/*.sym 
-        sentry-cli upload-dif ./build/output/*.pdb
+      - uses: actions/download-artifact@v2
     
-   
+      - name: Setup Sentry CLI
+        uses: mathrix-education/setup-sentry-cli@0.1.0
+        with:
+          token: ${{ secrets.SENTRY_TOKEN }}
+          organization: anton-filimonov
+          project: qt_cpp_sentry
+
+      - name: Create release
+        shell: sh
+        run: |
+          sentry-cli releases new $QT_CPP_SENTRY_VERSION
+          sentry-cli releases set-commits --auto $QT_CPP_SENTRY_VERSION
+
+      - name: Upload symbols
+        shell: sh
+        run: |
+          sentry-cli upload-dif ./build-ubuntu-x64/*.sym 
+          sentry-cli upload-dif ./build-macos-x64/*.sym 
+          sentry-cli upload-dif ./build-windows-x64/*.pdb
+          sentry-cli upload-dif ./build-windows-x86/*.pdb
