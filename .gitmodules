@@ -1,0 +1,4 @@
+[submodule "external/sentry-native"]
+	path = external/sentry-native
+	url = git@github.com:variar/sentry-native.git
+	branch = user_consent_before_sent

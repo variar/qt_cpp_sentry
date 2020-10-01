@@ -1,0 +1,119 @@
+name: "CI Build and Release"
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - os: ubuntu
+            os_version: 16.04
+            qt_version: 5.9.9
+            release_tag: linux
+            cc: gcc-8
+            cxx: g++-8
+            arch: x64
+
+          - os: macos
+            os_version: latest
+            qt_version: 5.12.8
+            release_tag: macos
+            cc: clang
+            cxx: clang++
+            arch: x64
+
+          - os: windows
+            os_version: latest
+            qt_version: 5.15.1
+            release_tag: windows
+            cc: cl
+            cxx: cl
+            arch: x64
+
+          - os: windows
+            os_version: latest
+            qt_version: 5.15.1
+            release_tag: windows
+            cc: cl
+            cxx: cl
+            arch: x86
+            qt_arch: win32_msvc2019
+
+    runs-on: ${{ matrix.config.os }}-${{ matrix.config.os_version }}
+    
+    steps:
+    - uses: actions/checkout@v2
+    - uses: seanmiddleditch/gha-setup-ninja@master
+
+    - name: Set workspace environment
+      shell: sh
+      run: |
+        echo "::set-env name=QT_CPP_SENTRY_VERSION::20.10.0.$((${{ github.run_number }}))"
+
+    - name: Install curl
+      if: ${{ matrix.config.os == 'ubuntu' }} 
+      run: |
+        sudo apt-get install libcurl4-openssl-dev
+
+    - name: Cache Qt
+      id: cache-qt
+      uses: actions/cache@v1
+      with:
+        path: ../Qt
+        key: ${{ matrix.config.os }}-${{ matrix.config.arch }}-${{ matrix.config.qt_version }}-QtCache
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v2
+      with:
+        version: ${{ matrix.config.qt_version }}
+        arch: ${{ matrix.config.qt_arch }}
+        cached: ${{ steps.cache-qt.outputs.cache-hit }}
+
+    - name: Prepare dev cmd
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: ${{ matrix.config.arch }}
+
+    - name: Prepare compiler env
+      run: |
+        echo "::set-env name=CC::${{ matrix.config.cc }}"
+        echo "::set-env name=CXX::${{ matrix.config.cxx }}"
+
+    - name: configure
+      run: |
+        mkdir build
+        cd build
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+
+    - name: build
+      run: |
+        cmake --build build -t qt_cpp_sentry
+
+    - name: Setup Sentry CLI
+      uses: mathrix-education/setup-sentry-cli@0.1.0
+      with:
+        token: ${{ secrets.SENTRY_TOKEN }}
+        organization: anton-filimonov
+        project: qt_cpp_sentry
+
+    - name: Create Sentry release
+      shell: sh
+      run: |
+        sentry-cli releases new $QT_CPP_SENTRY_VERSION
+        sentry-cli releases set-commits --auto $QT_CPP_SENTRY_VERSION
+
+    - name: Upload symbols
+      shell: sh
+      run: |
+        sentry-cli upload-dif ./build/output/*.sym 
+        sentry-cli upload-dif ./build/output/*.pdb
+    
+   
