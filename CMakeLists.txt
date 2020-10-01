@@ -56,5 +56,11 @@ set(CMAKE_AUTOMOC OFF)
 set(CMAKE_INCLUDE_CURRENT_DIR OFF)
 set(BUILD_SHARED_LIBS OFF)
 
+if (APPLE)
+set(SENTRY_BACKEND "crashpad" CACHE INTERNAL "" FORCE)
+else()
+set(SENTRY_BACKEND "breakpad" CACHE INTERNAL "" FORCE)
+endif()
+
 add_subdirectory(external/sentry-native)
 add_subdirectory(src)
