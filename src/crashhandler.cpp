@@ -36,6 +36,8 @@
 #include <QTextEdit>
 #include <QVBoxLayout>
 
+#include <memory>
+
 namespace {
 
 constexpr const char* DSN
