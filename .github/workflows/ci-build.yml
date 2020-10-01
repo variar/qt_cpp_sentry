@@ -51,6 +51,9 @@ jobs:
     
     steps:
     - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+        
     - uses: seanmiddleditch/gha-setup-ninja@master
 
     - name: Set workspace environment
@@ -95,7 +98,7 @@ jobs:
 
     - name: build
       run: |
-        cmake --build build -t qt_cpp_sentry
+        cmake --build build
 
     - name: Setup Sentry CLI
       uses: mathrix-education/setup-sentry-cli@0.1.0
