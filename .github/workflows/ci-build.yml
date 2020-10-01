@@ -113,7 +113,7 @@ jobs:
       - name: Set workspace environment
         shell: sh
         run: |
-          echo "::set-env name=KLOGG_VERSION::20.9.0.${{ github.run_number }}"
+          echo "::set-env name=QT_CPP_SENTRY_VERSION::20.10.0.${{ github.run_number }}"
 
       - uses: actions/download-artifact@v2
     
