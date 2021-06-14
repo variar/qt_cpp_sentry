@@ -16,13 +16,19 @@ add_executable(qt_cpp_sentry ${OS_BUNDLE} ${MAIN_SOURCES})
 set_target_properties(qt_cpp_sentry PROPERTIES AUTORCC ON)
 set_target_properties(qt_cpp_sentry PROPERTIES AUTOMOC ON)
 
-target_link_libraries(qt_cpp_sentry PUBLIC Qt5::Core Qt5::Widgets sentry)
+target_link_libraries(qt_cpp_sentry PUBLIC Qt5::Core Qt5::Widgets sentry crashpad_client)
 
 if (NOT WIN32)
     add_custom_command(TARGET qt_cpp_sentry POST_BUILD
-        COMMAND ${DUMP_SYMS} $<TARGET_FILE:qt_cpp_sentry> > ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/qt_cpp_sentry.sym
+        COMMAND cmake -E copy ${SYMS_TOOLS}/minidump_dump $<TARGET_FILE_DIR:qt_cpp_sentry>
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        COMMENT "Generating symbols for $<TARGET_FILE:qt_cpp_sentry>"
+        COMMENT "Copy minidump_dump for qt_cpp_sentry"
+    )
+else()
+    add_custom_command(TARGET qt_cpp_sentry POST_BUILD
+        COMMAND cmake -E copy ${SYMS_TOOLS}/minidump_dump_x64.exe $<TARGET_FILE_DIR:qt_cpp_sentry>/minidump_dump.exe
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Copy minidump_dump.exe for qt_cpp_sentry"
     )
 endif()
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 project(qt_cpp_sentry
-        VERSION 20.10.0
+        VERSION 21.06.0
         DESCRIPTION "Qt cpp sentry example"
         LANGUAGES C CXX)
 
@@ -40,12 +40,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(prepare_version)
 
+set(SYMS_TOOLS_BASE ${CMAKE_CURRENT_SOURCE_DIR}/external/dump_syms)
+
 if (WIN32)
-    set(DUMP_SYMS ${CMAKE_CURRENT_SOURCE_DIR}/external/dump_syms/win/dump_syms.exe)
+    set(SYMS_TOOLS ${SYMS_TOOLS_BASE}/win)
 elseif(APPLE)
-    set(DUMP_SYMS ${CMAKE_CURRENT_SOURCE_DIR}/external/dump_syms/mac/dump_syms)
+    set(SYMS_TOOLS ${SYMS_TOOLS_BASE}/mac)
 else()
-    set(DUMP_SYMS ${CMAKE_CURRENT_SOURCE_DIR}/external/dump_syms/linux/dump_syms)
+    set(SYMS_TOOLS ${SYMS_TOOLS_BASE}/linux)
 endif()
 
 find_package(Qt5 COMPONENTS Core Widgets REQUIRED)
@@ -56,11 +58,6 @@ set(CMAKE_AUTOMOC OFF)
 set(CMAKE_INCLUDE_CURRENT_DIR OFF)
 set(BUILD_SHARED_LIBS OFF)
 
-if (APPLE)
 set(SENTRY_BACKEND "crashpad" CACHE INTERNAL "" FORCE)
-else()
-set(SENTRY_BACKEND "breakpad" CACHE INTERNAL "" FORCE)
-endif()
-
 add_subdirectory(external/sentry-native)
 add_subdirectory(src)

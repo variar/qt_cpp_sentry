@@ -21,8 +21,10 @@
 
 #include "sentry.h"
 
-#include "version.h"
+#include "client/crash_report_database.h"
+
 #include "openfilehelper.h"
+#include "version.h"
 
 #include <QByteArray>
 #include <QDialog>
@@ -31,12 +33,15 @@
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QProcess>
 #include <QPushButton>
 #include <QStandardPaths>
 #include <QTextEdit>
 #include <QVBoxLayout>
 
+#include <iostream>
 #include <memory>
+#include <vector>
 
 namespace {
 
@@ -45,7 +50,7 @@ constexpr const char* DSN
 
 QString sentryDatabasePath()
 {
-    auto basePath = QStandardPaths::writableLocation( QStandardPaths::AppDataLocation );
+    auto basePath = QCoreApplication::applicationDirPath();
     return basePath.append( "/dump_data" );
 }
 
@@ -74,19 +79,8 @@ std::vector<QJsonDocument> extractMessage( const QByteArray& envelopeString )
     return messages;
 }
 
-int askUserConfirmation( sentry_envelope_t* envelope, void* )
+QDialog::DialogCode askUserConfirmation( const QString& formattedReport )
 {
-    size_t size_out = 0;
-    char* rawEnvelope = sentry_envelope_serialize( envelope, &size_out );
-    auto envelopeString = QByteArray( rawEnvelope );
-    sentry_free( rawEnvelope );
-
-    const auto messages = extractMessage( envelopeString );
-    QString formattedReport;
-    for ( const auto& message : messages ) {
-        formattedReport.append( QString::fromUtf8( message.toJson( QJsonDocument::Indented ) ) );
-    }
-
     auto message = std::make_unique<QLabel>();
     message->setText( "During last run application has encountered an unexpected error." );
 
@@ -99,8 +93,8 @@ int askUserConfirmation( sentry_envelope_t* envelope, void* )
     report->setSizePolicy( QSizePolicy::Expanding, QSizePolicy::Expanding );
 
     auto sendReportLabel = std::make_unique<QLabel>();
-    sendReportLabel->setText(
-        "Application can send this report to sentry.io for developers to analyze and fix the issue" );
+    sendReportLabel->setText( "Application can send this report to sentry.io for developers to "
+                              "analyze and fix the issue" );
 
     auto privacyPolicy = std::make_unique<QLabel>();
     privacyPolicy->setText(
@@ -144,19 +138,55 @@ int askUserConfirmation( sentry_envelope_t* envelope, void* )
 
     confirmationDialog->setLayout( layout.release() );
 
-    auto confirmationResult = confirmationDialog->exec();
-    return confirmationResult == QDialog::Accepted ? 0 : 1;
+    return static_cast<QDialog::DialogCode>( confirmationDialog->exec() );
+}
+
+void checkCrashpadReports( const QString& databasePath )
+{
+    using namespace crashpad;
+
+    auto database = CrashReportDatabase::InitializeWithoutCreating(
+        base::FilePath{ databasePath.toStdString() } );
+
+    std::vector<CrashReportDatabase::Report> pendingReports;
+    database->GetCompletedReports( &pendingReports );
+    std::cout << "Pending reports " << pendingReports.size() << std::endl;
+
+    for ( const auto& report : pendingReports ) {
+        if ( !report.uploaded ) {
+            const auto reportFile = QString::fromStdString( report.file_path.value() );
+#ifdef Q_OS_WIN
+            const auto stackwalker = QCoreApplication::applicationDirPath() + "/minidump_dump.exe";
+#else
+            const auto stackwalker = QCoreApplication::applicationDirPath() + "/minidump_dump";
+#endif
+            QProcess stackProcess;
+            stackProcess.start( stackwalker, QStringList() << reportFile );
+            stackProcess.waitForFinished();
+
+            QString formattedReport = reportFile;
+            formattedReport.append( QChar::LineFeed )
+                .append( QString::fromUtf8( stackProcess.readAllStandardOutput() ) );
+
+            if ( QDialog::Accepted == askUserConfirmation( formattedReport ) ) {
+                database->RequestUpload( report.uuid );
+            }
+            else {
+                database->DeleteReport( report.uuid );
+            }
+        }
+    }
 }
 
 } // namespace
 
 CrashHandler::CrashHandler()
 {
-    sentry_options_t* sentryOptions = sentry_options_new();
-
-    sentry_options_set_debug( sentryOptions, 1 );
-
     const auto dumpPath = sentryDatabasePath();
+    checkCrashpadReports( dumpPath );
+
+    sentry_options_t* sentryOptions = sentry_options_new();
+    sentry_options_set_debug( sentryOptions, 1 );
 
 #ifdef Q_OS_WIN
     sentry_options_set_database_pathw( sentryOptions, dumpPath.toStdWString().c_str() );
@@ -166,19 +196,13 @@ CrashHandler::CrashHandler()
 
     sentry_options_set_dsn( sentryOptions, DSN );
 
-    sentry_options_set_require_user_consent( sentryOptions, false );
+    sentry_options_set_require_user_consent( sentryOptions, true );
     sentry_options_set_auto_session_tracking( sentryOptions, false );
 
     sentry_options_set_symbolize_stacktraces( sentryOptions, true );
 
     sentry_options_set_environment( sentryOptions, "development" );
     sentry_options_set_release( sentryOptions, QT_CPP_SENTRY_VERSION );
-
-    auto transport = sentry_transport_new_default();
-
-    sentry_transport_set_ask_consent_func( transport, askUserConfirmation );
-
-    sentry_options_set_transport( sentryOptions, transport );
 
     sentry_init( sentryOptions );
 
